@@ -1,8 +1,4 @@
-"""TiTaN — single-service multi-protocol proxy panel.
 
-FastAPI app: admin UI + REST API + subscription endpoints. Xray-core does the
-actual proxying; nginx fronts both. SQLite for storage.
-"""
 import asyncio
 import functools
 import logging
@@ -41,10 +37,8 @@ from fastapi.templating import Jinja2Templates
 
 from . import APP_NAME, APP_VERSION, config, db, security, state, xray
 from . import nodes as nodesync
-from . import reality
 from . import routing
 from . import tasks as bg
-from . import wg
 from .colo_map import describe_colo
 from .geo import detect_location, flag_for_location, flag_from_code
 from .links import build_links, subscription_text, volume_text
@@ -52,13 +46,7 @@ from .links import build_links, subscription_text, volume_text
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-DOH_PRIMARY = "https://1.1.1.1/dns-query"
-DOH_SECONDARY = "https://8.8.8.8/dns-query"
-doh_client = httpx.AsyncClient(timeout=6.0, follow_redirects=True)
 
-
-# Idempotency for config creation (double-click / network retry after “failed to fetch”).
-# Frontend now sends a per-wizard client_nonce; fallback is (name, node_id, protocol).
 _recent_creates: dict[str, tuple[float, str]] = {}
 _recent_creates_lock = threading.Lock()
 _IDEMPOTENCY_TTL = 10.0  # seconds
@@ -72,28 +60,15 @@ async def lifespan(app: FastAPI):
     # config._usable_data_dir() already made this writable (or replaced it with a
     # temp dir and said so loudly), so a bad Volume cannot crash the boot.
     os.makedirs(config.DATA_DIR, exist_ok=True)
-    if not config.IS_NODE:
-        # generate the Reality keypair once (no-op without the Xray binary)
-        try:
-            reality.ensure_reality_keys()
-        except Exception:  # noqa: BLE001
-            pass
     try:
         xray.write_xray_config()
         xray.restart_xray()
-    except Exception:  # noqa: BLE001
-        pass
-    # WireGuard (optional): generate this node's keypair + start the server.
-    try:
-        wg.ensure_keys()
-        wg.restart()
     except Exception:  # noqa: BLE001
         pass
     bg.start_background_tasks(app)
     yield
     for t in app.state.titan_tasks:
         t.cancel()
-    await doh_client.aclose()
 
 
 _DOCS_ON = os.environ.get("TITAN_DOCS", "").strip().lower() in ("1", "true", "yes")
