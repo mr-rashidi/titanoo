@@ -1,35 +1,22 @@
-FROM alpine:3.20
+FROM python:3.10-slim
 
-# Runtime dependencies
-RUN apk add --no-cache python3 py3-pip nginx curl unzip jq bash tzdata
+RUN apt-get update && apt-get install -y \
+    nginx \
+    curl \
+    ca-certificates \
+    envsubst \
+    && rm -rf /var/lib/apt/lists/*
 
-# Build dependencies for Pillow / psutil
-RUN apk add --no-cache --virtual .build-deps \
-    gcc musl-dev python3-dev zlib-dev jpeg-dev freetype-dev linux-headers
-
-WORKDIR /app
-COPY requirements.txt .
-
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt \
-    && apk del .build-deps
-
-# Install Xray-core (latest)
-RUN curl -fsSL -o xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip" \
-    && unzip xray.zip -d /usr/local/bin/ \
-    && chmod +x /usr/local/bin/xray \
-    && rm xray.zip
-
-# Optional userspace WireGuard server (AmneziaWG). Runs only on VPS/Docker with
-# NET_ADMIN + /dev/net/tun; the panel skips it gracefully when absent.
-RUN curl -fsSL -o /usr/local/bin/amnezia-wg-go "https://github.com/amnezia-vpn/amnezia-wg-go/releases/latest/download/amnezia-wg-go-linux-amd64" \
-    && chmod +x /usr/local/bin/amnezia-wg-go \
-    || echo "amnezia-wg-go download skipped (WireGuard will be disabled)"
+COPY nginx.conf.template /etc/nginx/sites-available/default
 
 COPY . /app
-COPY nginx.conf /etc/nginx/nginx.conf
+WORKDIR /app
+
+RUN pip install --no-cache-dir -r requirements.txt
 
 RUN chmod +x /app/entrypoint.sh
+RUN chmod +x /app/start_xray.sh
 
-EXPOSE 8000
+EXPOSE 8080
 
 CMD ["/app/entrypoint.sh"]
